@@ -1,0 +1,93 @@
+
+variables:
+  ACCESS_TOKEN:
+    value: ""
+    description: "Access token with read/write permissions to the container registry"
+  DOCKER_USERNAME:
+    value: ""
+    description: "Username for pushing and pulling Docker image"
+  DOCKER_REGISTRY:
+    value: ""
+    description: "Address of the Docker registry where images should be published"
+  DOCKER_IMAGE:
+    value: ""
+    description: "Address of the Docker registry and name of the docker image (without tags)"
+  RUNNER_TAG:
+    value: ""
+    description: "The tag of the GitLab runner executing the jobs"
+  KUBERNETES_NAMESPACE:
+    value: "default"
+    description: "The name of the Kubernetes namespace where resources will be deployed. The namespace must exist before deployment"
+  KUBERNETES_SERVICE_NODEPORT:
+    value: 30066
+    description: "The NodePort value for exposing a service on each node's IP at a static port. This parameter allows external access to the service through the specified port, facilitating communication from outside the cluster. The port should be between 30000 - 32767"
+  KUBERNETES_MANIFEST_LOCATION:
+    value: "/k8s/app.yml"
+    description: "The file path or URL where the Kubernetes manifest files are located. This parameter specifies the source of the configuration files used to create or update Kubernetes resources"
+
+stages:
+  - docker
+  - deploy-k8s
+
+build-latest:
+  stage: docker
+  before_script:
+    - echo -n $ACCESS_TOKEN | docker login -u "$DOCKER_USERNAME" --password-stdin $DOCKER_REGISTRY
+    - chmod -R +x .
+  tags:
+    - $RUNNER_TAG
+  script:
+    - docker pull $DOCKER_IMAGE:latest || echo "Previous image does not exist or could not be pulled."
+    - >
+      docker build
+      --pull
+      --cache-from $DOCKER_IMAGE:latest
+      --tag $DOCKER_IMAGE:latest
+      --file Dockerfile
+      .
+    - docker push $DOCKER_IMAGE:latest
+    - docker image rm -f $(docker images $DOCKER_IMAGE -q)
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+build-tag:
+  stage: docker
+  before_script:
+    - echo -n $ACCESS_TOKEN | docker login -u "$DOCKER_USERNAME" --password-stdin $DOCKER_REGISTRY
+    - chmod -R +x .
+  tags:
+    - $RUNNER_TAG
+  script:
+    - docker pull $DOCKER_IMAGE:latest || echo "Previous image does not exist or could not be pulled."
+    - >
+      docker build
+      --pull
+      --cache-from $DOCKER_IMAGE:latest
+      --tag $DOCKER_IMAGE:$CI_COMMIT_REF_NAME
+      --file Dockerfile
+      .
+    - docker push $DOCKER_IMAGE:$CI_COMMIT_REF_NAME
+    - docker image rm -f $(docker images $DOCKER_IMAGE -q)
+  rules:
+    - if: '$CI_COMMIT_TAG'
+
+deploy-k8s:
+  tags:
+    - $RUNNER_TAG
+  stage: deploy-k8s
+  script:
+    - >
+      if [[ "$CI_DEFAULT_BRANCH" == "main" || "$CI_DEFAULT_BRANCH" == "latest" ]]; then
+        export DOCKER_TAG="latest"
+      else
+        export DOCKER_TAG=$CI_COMMIT_BRANCH
+      fi
+    - sed -i "s|SAMPLE_DOCKER_IMAGE|$DOCKER_IMAGE|g" ./$MANIFEST_LOCATION
+    - sed -i "s|SAMPLE_DOCKER_TAG|$DOCKER_TAG|g" ./$MANIFEST_LOCATION
+    - sed -i "s|SAMPLE_KUBERNETES_NODEPORT|$KUBERNETES_NODEPORT|g" ./$MANIFEST_LOCATION
+    - echo "$KUBERNETES_CONFIG" > config
+    - docker run --rm -v ./config:/.kube/config -v $PWD/k8s:/k8s bitnami/kubectl:latest apply -f $MANIFEST_LOCATION -n $KUBERNETES_NAMESPACE
+    - docker image rm -f bitnami/kubectl:latest
+    - rm config
+  rules:
+    - if: '$KUBERNETES_CONFIG'
