@@ -82,11 +82,11 @@ deploy-k8s:
       else
         export DOCKER_TAG=$CI_COMMIT_BRANCH
       fi
-    - sed -i "s|SAMPLE_DOCKER_IMAGE|$DOCKER_IMAGE|g" ./$MANIFEST_LOCATION
-    - sed -i "s|SAMPLE_DOCKER_TAG|$DOCKER_TAG|g" ./$MANIFEST_LOCATION
-    - sed -i "s|SAMPLE_KUBERNETES_NODEPORT|$KUBERNETES_NODEPORT|g" ./$MANIFEST_LOCATION
+    - sed -i "s|SAMPLE_DOCKER_IMAGE|$DOCKER_IMAGE|g" ./$KUBERNETES_MANIFEST_LOCATION
+    - sed -i "s|SAMPLE_DOCKER_TAG|$DOCKER_TAG|g" ./$KUBERNETES_MANIFEST_LOCATION
+    - sed -i "s|SAMPLE_KUBERNETES_NODEPORT|$KUBERNETES_NODEPORT|g" ./$KUBERNETES_MANIFEST_LOCATION
     - echo "$KUBERNETES_CONFIG" > config
-    - docker run --rm -v ./config:/.kube/config -v $PWD/k8s:/k8s bitnami/kubectl:latest apply -f $MANIFEST_LOCATION -n $KUBERNETES_NAMESPACE
+    - docker run --rm -v ./config:/.kube/config -v $PWD/k8s:/k8s bitnami/kubectl:latest apply -f $KUBERNETES_MANIFEST_LOCATION -n $KUBERNETES_NAMESPACE
     - docker image rm -f bitnami/kubectl:latest
     - rm config
   rules:
